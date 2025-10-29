@@ -1,17 +1,44 @@
 import React, { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
 import '../styles/RagChat.css';
+import { API_ENDPOINTS } from "../config/api";
 
-const RagChat = () => {
-    const [messages, setMessages] = useState([]);
-    const [inputValue, setInputValue] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const messagesEndRef = useRef(null);
-    const eventSourceRef = useRef(null);
+// 定义消息类型
+interface Message {
+    id: number;
+    content: string;
+    isUser: boolean;
+    finished?: boolean;
+    errorMessage?: string | null;
+    usage?: {
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+    } | null;
+    timestamp: Date;
+}
+
+// 定义EventSource数据响应类型
+interface EventSourceData {
+    content?: string;
+    finished?: boolean;
+    errorMessage?: string | null;
+    usage?: {
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+    } | null;
+}
+
+const RagChat: React.FC = () => {
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [inputValue, setInputValue] = useState<string>('');
+    const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const eventSourceRef = useRef<EventSource | null>(null);
 
     // 自动滚动到最新消息
-    const scrollToBottom = () => {
+    const scrollToBottom = (): void => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
@@ -20,14 +47,14 @@ const RagChat = () => {
     }, [messages]);
 
     // 发送消息
-    const sendMessage = async () => {
+    const sendMessage = async (): Promise<void> => {
         if (!inputValue.trim()) return;
 
         setIsLoading(true);
         setError(null);
 
         // 添加用户消息
-        const userMessage = {
+        const userMessage: Message = {
             id: Date.now(),
             content: inputValue,
             isUser: true,
@@ -38,7 +65,7 @@ const RagChat = () => {
 
         // 添加空的AI消息用于流式更新
         const aiMessageId = Date.now() + 1;
-        const aiMessage = {
+        const aiMessage: Message = {
             id: aiMessageId,
             content: '',
             isUser: false,
@@ -53,38 +80,44 @@ const RagChat = () => {
 
         try {
             // 使用Server-Sent Events接收流式响应
-            // 使用实际的API地址
             const eventSource = new EventSource(
-                `http://localhost:8080/api/chat/rag/stream?question=${encodeURIComponent(inputValue)}&topK=3`
+                `${API_ENDPOINTS.chat.stream}?question=${encodeURIComponent(inputValue)}&topK=3`
             );
 
             eventSourceRef.current = eventSource;
 
-            eventSource.onmessage = (event) => {
-                const data = JSON.parse(event.data);
+            eventSource.onmessage = (event: MessageEvent) => {
+                try {
+                    const data: EventSourceData = JSON.parse(event.data);
 
-                // 更新AI消息内容
-                setMessages(prev => prev.map(msg => {
-                    if (msg.id === aiMessageId) {
-                        return {
-                            ...msg,
-                            content: msg.content + (data.content || ''),
-                            finished: data.finished,
-                            errorMessage: data.errorMessage,
-                            usage: data.usage
-                        };
+                    // 更新AI消息内容
+                    setMessages(prev => prev.map(msg => {
+                        if (msg.id === aiMessageId) {
+                            return {
+                                ...msg,
+                                content: msg.content + (data.content || ''),
+                                finished: data.finished || false,
+                                errorMessage: data.errorMessage || null,
+                                usage: data.usage || null
+                            };
+                        }
+                        return msg;
+                    }));
+
+                    // 如果流结束，关闭连接
+                    if (data.finished) {
+                        eventSource.close();
+                        setIsLoading(false);
                     }
-                    return msg;
-                }));
-
-                // 如果流结束，关闭连接
-                if (data.finished) {
-                    eventSource.close();
+                } catch (parseError) {
+                    console.error('Error parsing event data:', parseError);
+                    setError('解析服务器响应时出错');
                     setIsLoading(false);
+                    eventSource.close();
                 }
             };
 
-            eventSource.onerror = (error) => {
+            eventSource.onerror = (error: Event) => {
                 console.error('EventSource error:', error);
                 setError('连接服务器时出错，请检查网络连接');
                 setIsLoading(false);
@@ -93,13 +126,13 @@ const RagChat = () => {
 
         } catch (err) {
             console.error('Error sending message:', err);
-            setError('发送消息时出错: ' + err.message);
+            setError('发送消息时出错: ' + (err instanceof Error ? err.message : '未知错误'));
             setIsLoading(false);
         }
     };
 
     // 处理键盘事件
-    const handleKeyPress = (e) => {
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendMessage();
@@ -107,11 +140,12 @@ const RagChat = () => {
     };
 
     // 清空聊天记录
-    const clearChat = () => {
+    const clearChat = (): void => {
         setMessages([]);
         setError(null);
         if (eventSourceRef.current) {
             eventSourceRef.current.close();
+            eventSourceRef.current = null;
         }
     };
 
@@ -175,14 +209,13 @@ const RagChat = () => {
             )}
 
             <div className="input-container">
-        <textarea
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="请输入您的问题..."
-            disabled={isLoading}
-            rows="3"
-        />
+                <textarea
+                    value={inputValue}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInputValue(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="请输入您的问题..."
+                    disabled={isLoading}
+                />
                 <button
                     onClick={sendMessage}
                     disabled={isLoading || !inputValue.trim()}
