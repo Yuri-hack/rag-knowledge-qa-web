@@ -36,6 +36,7 @@ const RagChat: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const eventSourceRef = useRef<EventSource | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null); // 新增：输入框引用
 
     // 自动滚动到最新消息
     const scrollToBottom = (): void => {
@@ -45,6 +46,12 @@ const RagChat: React.FC = () => {
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    useEffect(() => {
+        if (textareaRef.current) {
+            textareaRef.current.focus();
+        }
+    }, []);
 
     // 发送消息
     const sendMessage = async (): Promise<void> => {
@@ -81,7 +88,7 @@ const RagChat: React.FC = () => {
         try {
             // 使用Server-Sent Events接收流式响应
             const eventSource = new EventSource(
-                `${API_ENDPOINTS.chat.stream}?question=${encodeURIComponent(inputValue)}&topK=3`
+                `${API_ENDPOINTS.chat.stream}?question=${encodeURIComponent(inputValue)}`
             );
 
             eventSourceRef.current = eventSource;
@@ -104,16 +111,26 @@ const RagChat: React.FC = () => {
                         return msg;
                     }));
 
-                    // 如果流结束，关闭连接
                     if (data.finished) {
                         eventSource.close();
                         setIsLoading(false);
+                        // 重新聚焦到输入框
+                        setTimeout(() => {
+                            if (textareaRef.current) {
+                                textareaRef.current.focus();
+                            }
+                        }, 100);
                     }
                 } catch (parseError) {
                     console.error('Error parsing event data:', parseError);
                     setError('解析服务器响应时出错');
                     setIsLoading(false);
                     eventSource.close();
+                    setTimeout(() => {
+                        if (textareaRef.current) {
+                            textareaRef.current.focus();
+                        }
+                    }, 100);
                 }
             };
 
@@ -122,12 +139,22 @@ const RagChat: React.FC = () => {
                 setError('连接服务器时出错，请检查网络连接');
                 setIsLoading(false);
                 eventSource.close();
+                setTimeout(() => {
+                    if (textareaRef.current) {
+                        textareaRef.current.focus();
+                    }
+                }, 100);
             };
 
         } catch (err) {
             console.error('Error sending message:', err);
             setError('发送消息时出错: ' + (err instanceof Error ? err.message : '未知错误'));
             setIsLoading(false);
+            setTimeout(() => {
+                if (textareaRef.current) {
+                    textareaRef.current.focus();
+                }
+            }, 100);
         }
     };
 
@@ -147,6 +174,11 @@ const RagChat: React.FC = () => {
             eventSourceRef.current.close();
             eventSourceRef.current = null;
         }
+        setTimeout(() => {
+            if (textareaRef.current) {
+                textareaRef.current.focus();
+            }
+        }, 100);
     };
 
     // 组件卸载时关闭连接
@@ -159,70 +191,73 @@ const RagChat: React.FC = () => {
     }, []);
 
     return (
-        <div className="rag-chat-container">
-            <div className="chat-header">
-                <h2>RAG智能助手</h2>
-                <button className="clear-btn" onClick={clearChat}>清空对话</button>
-            </div>
-
-            <div className="messages-container">
-                {messages.length === 0 ? (
-                    <div className="empty-state">
-                        <h3>欢迎使用RAG智能助手</h3>
-                        <p>请输入您的问题，我将基于知识库为您提供答案</p>
-                    </div>
-                ) : (
-                    messages.map((message) => (
-                        <div
-                            key={message.id}
-                            className={`message ${message.isUser ? 'user-message' : 'ai-message'}`}
-                        >
-                            <div className="message-content">
-                                {message.content || (message.isUser ? inputValue : '思考中...')}
-                                {!message.isUser && !message.finished && !message.errorMessage && (
-                                    <span className="typing-indicator">...</span>
-                                )}
-                            </div>
-                            {message.errorMessage && (
-                                <div className="error-message">
-                                    错误: {message.errorMessage}
-                                </div>
-                            )}
-                            {message.usage && (
-                                <div className="usage-info">
-                                    令牌使用: 输入 {message.usage.inputTokens} | 输出 {message.usage.outputTokens} | 总计 {message.usage.totalTokens}
-                                </div>
-                            )}
-                            <div className="message-time">
-                                {message.timestamp.toLocaleTimeString()}
-                            </div>
-                        </div>
-                    ))
-                )}
-                <div ref={messagesEndRef} />
-            </div>
-
-            {error && (
-                <div className="error-alert">
-                    {error}
+        <div className="chat-page-container"> {/* 新增外层容器 */}
+            <div className="rag-chat-container">
+                <div className="chat-header">
+                    <h2>RAG智能助手</h2>
+                    <button className="clear-btn" onClick={clearChat}>清空对话</button>
                 </div>
-            )}
 
-            <div className="input-container">
-                <textarea
-                    value={inputValue}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInputValue(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="请输入您的问题..."
-                    disabled={isLoading}
-                />
-                <button
-                    onClick={sendMessage}
-                    disabled={isLoading || !inputValue.trim()}
-                    className="send-btn"
-                >
-                    {isLoading ? '发送中...' : '发送'}
-                </button>
+                <div className="messages-container">
+                    {messages.length === 0 ? (
+                        <div className="empty-state">
+                            <h3>欢迎使用RAG智能助手</h3>
+                            <p>请输入您的问题，我将基于知识库为您提供答案</p>
+                        </div>
+                    ) : (
+                        messages.map((message) => (
+                            <div
+                                key={message.id}
+                                className={`message ${message.isUser ? 'user-message' : 'ai-message'}`}
+                            >
+                                <div className="message-content">
+                                    {message.content || (message.isUser ? inputValue : '思考中...')}
+                                    {!message.isUser && !message.finished && !message.errorMessage && (
+                                        <span className="typing-indicator">...</span>
+                                    )}
+                                </div>
+                                {message.errorMessage && (
+                                    <div className="error-message">
+                                        错误: {message.errorMessage}
+                                    </div>
+                                )}
+                                {message.usage && (
+                                    <div className="usage-info">
+                                        令牌使用: 输入 {message.usage.inputTokens} | 输出 {message.usage.outputTokens} | 总计 {message.usage.totalTokens}
+                                    </div>
+                                )}
+                                <div className="message-time">
+                                    {message.timestamp.toLocaleTimeString()}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                    <div ref={messagesEndRef} />
+                </div>
+
+                {error && (
+                    <div className="error-alert">
+                        {error}
+                    </div>
+                )}
+
+                <div className="input-container">
+                    <textarea
+                        ref={textareaRef} // 新增引用
+                        value={inputValue}
+                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setInputValue(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="请输入您的问题..."
+                        disabled={isLoading}
+                    />
+                    <button
+                        onClick={sendMessage}
+                        disabled={isLoading || !inputValue.trim()}
+                        className="send-btn"
+                    >
+                        {isLoading ? '发送中...' : '发送'}
+                    </button>
+                </div>
             </div>
         </div>
     );
