@@ -68,4 +68,3 @@ ssh $REMOTE_USER@$REMOTE_HOST "
 
 log "前端应用部署完成!"
 log "访问地址: http://$REMOTE_HOST:3000"
-;;
